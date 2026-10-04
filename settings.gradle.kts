@@ -1,0 +1,1 @@
+rootProject.name = providers.gradleProperty("name").getOrElse("hytale-plugin-template")

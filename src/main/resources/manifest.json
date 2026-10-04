@@ -1,0 +1,16 @@
+{
+  "Group": "org.example",
+  "Name": "hytale-plugin-template",
+  "Version": "1.0.0-SNAPSHOT",
+  "Description": "",
+  "Authors": [],
+  "Website": "",
+  "Main": "org.example.TestPlugin",
+  "ServerVersion": "*",
+  "Dependencies": {},
+  "OptionalDependencies": {},
+  "LoadBefore": {},
+  "DisabledByDefault": false,
+  "IncludesAssetPack": true,
+  "SubPlugins": []
+}
