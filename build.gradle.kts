@@ -18,15 +18,30 @@ repositories {
 //   1. hytale.installDir  (-P CLI flag > this project's gradle.properties > ~/.gradle/gradle.properties)
 //   2. hytale_home        (community convention: the folder that contains "install" and "UserData")
 //   3. %APPDATA%/Hytale/install
+// A blank value counts as unset, so an empty property in gradle.properties falls through to the
+// next source instead of resolving to a path relative to the project directory.
 val hytaleInstallDir = providers.gradleProperty("hytale.installDir")
-    .orElse(providers.gradleProperty("hytale_home").map { "$it/install" })
-    .orElse(providers.environmentVariable("APPDATA").map { "$it/Hytale/install" })
-    .map { it.trim().trimEnd('/', '\\') }
+    .map { it.trim() }
+    .filter { it.isNotEmpty() }
+    .orElse(
+        providers.gradleProperty("hytale_home")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { "$it/install" }
+    )
+    .orElse(
+        providers.environmentVariable("APPDATA")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { "$it/Hytale/install" }
+    )
+    .map { it.trimEnd('/', '\\') }
     .getOrElse("")
 
 val hytalePatchline = providers.gradleProperty("hytale.patchline")
+    .map { it.trim() }
+    .filter { it.isNotEmpty() }
     .getOrElse("release")
-    .trim()
 
 val hytaleServerJar: File = file(
     "$hytaleInstallDir/$hytalePatchline/package/game/latest/Server/HytaleServer.jar"
@@ -87,9 +102,14 @@ val hytaleRunDir: File = layout.projectDirectory.dir("run").asFile
 // The server takes its assets via --assets. In this install they are the Assets.zip that
 // sits next to the Server/ folder holding the jar.
 val hytaleAssetsPath: String = providers.gradleProperty("hytale.assets")
+    .map { it.trim() }
+    .filter { it.isNotEmpty() }
     .getOrElse(File(hytaleServerJar.parentFile.parentFile, "Assets.zip").absolutePath)
 
-val hytaleDebugPort: String = providers.gradleProperty("hytale.debug.port").getOrElse("5005")
+val hytaleDebugPort: String = providers.gradleProperty("hytale.debug.port")
+    .map { it.trim() }
+    .filter { it.isNotEmpty() }
+    .getOrElse("5005")
 val hytaleDebugSuspend: Boolean = providers.gradleProperty("hytale.debug.suspend")
     .getOrElse("false")
     .trim()
@@ -241,8 +261,10 @@ val hytalePluginWebsite: String =
     providers.gradleProperty("hytale.plugin.website").getOrElse("").trim()
 val hytalePluginMainClass: String =
     providers.gradleProperty("hytale.plugin.mainClass").getOrElse("").trim()
-val hytalePluginServerVersion: String =
-    providers.gradleProperty("hytale.plugin.serverVersion").getOrElse("*").trim()
+val hytalePluginServerVersion: String = providers.gradleProperty("hytale.plugin.serverVersion")
+    .map { it.trim() }
+    .filter { it.isNotEmpty() }
+    .getOrElse("*")
 val hytalePluginDependencies: String =
     providers.gradleProperty("hytale.plugin.dependencies").getOrElse("").trim()
 val hytalePluginOptionalDependencies: String =
@@ -472,6 +494,35 @@ val debugHytaleServer = tasks.register<JavaExec>("debugServer") {
         }
         logger.lifecycle("Debug listener: localhost:$debugPort (suspend=$debugSuspend)")
         logger.lifecycle("Server working directory: ${runDir.absolutePath}")
+    }
+}
+
+// --- Implementation references --------------------------------------------------------
+// Where to look when implementing plugin code and assets. Nothing in the build produces files
+// from these; `referencePaths` reports them so a stale path is obvious. See AGENTS.md.
+val hytaleReferenceAssets: String =
+    providers.gradleProperty("hytale.reference.assets").getOrElse("").trim()
+val hytaleReferenceSource: String =
+    providers.gradleProperty("hytale.reference.source").getOrElse("").trim()
+
+val referencePaths = tasks.register("referencePaths") {
+    group = "hytale"
+    description = "Prints the configured asset and source-code reference paths and checks they exist."
+
+    // Copied into locals: an execution-time lambda must not read script members, or the
+    // configuration cache cannot serialize it.
+    val assets = hytaleReferenceAssets
+    val source = hytaleReferenceSource
+    doLast {
+        listOf("hytale.reference.assets" to assets, "hytale.reference.source" to source).forEach { (name, path) ->
+            val file = File(path)
+            when {
+                path.isEmpty() -> logger.lifecycle("$name: <unset>")
+                file.isDirectory -> logger.lifecycle("$name: $path")
+                file.isFile -> logger.lifecycle("$name: $path (file)")
+                else -> logger.warn("$name: $path is missing - update gradle.properties")
+            }
+        }
     }
 }
 

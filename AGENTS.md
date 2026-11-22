@@ -21,6 +21,7 @@ provided by the Hytale runtime and is never bundled into the produced plugin art
 .\gradlew copyPluginClasses           # compile and copy bytecode into run/mods/<group>.<name>
 .\gradlew syncAssets                  # mirror the pack's assets and manifest into src/main/resources
 .\gradlew debugServer                 # run the server with a JDWP debug listener
+.\gradlew referencePaths              # show the asset and source-code reference paths
 ```
 
 `verifyHytaleDependency` fails with an actionable message when the server jar is missing or
@@ -119,7 +120,9 @@ stop — including files you hand-write. Deletions propagate too: remove an asse
 disappears from the project. The mirror is skipped entirely when the mod folder does not exist,
 so it can never empty the project. If the build is cancelled rather than stopped cleanly (Ctrl+C)
 the finalizer may not run; the mod files are untouched, so run `.\gradlew syncAssets`
-afterwards.
+afterwards. Because the task mirrors by deleting then copying, killing a build *while it is
+running* can leave `src/main/resources` partly or wholly emptied — re-running
+`.\gradlew syncAssets` restores it from the mod folder.
 
 ## Loading plugin code in the debug server
 
@@ -141,9 +144,41 @@ Two settings matter:
 
 - `hytale.plugin.mainClass` **must** be set. Without it the manifest has no `"Main"`, the folder
   is treated as an asset pack, and the staged classes never load — the task warns when it is empty.
-- Keep `hytale.plugin.includesAssetPack=false`. The folder already supplies the asset pack, so a
-  classpath plugin registering the same `Group:Name` pack would collide. Set it `true` only when
-  packaging a built jar whose own embedded asset pack should load.
+- `hytale.plugin.includesAssetPack` decides which copy of the pack wins. With `false` the folder
+  stays authoritative. With `true` the classpath plugin registers the pack first and the server
+  logs `Asset pack '<Group>:<Name>' already registered (CLASSPATH), skipping MODS` — the classpath
+  copy wins and the folder pack is ignored. Both load, so this is a choice rather than a fault;
+  `true` is what a packaged jar needs to load its own embedded asset pack.
+
+## Implementation references
+
+Before writing new code or assets, look at the reference material these two properties point at.
+Read them from `gradle.properties`; `.\gradlew referencePaths` prints them and warns about a path
+that no longer exists.
+
+| Property | What is there |
+| --- | --- |
+| `hytale.reference.assets` | Real asset JSON **plus the JSON schema for every asset type** — use the schemas to learn an asset's fields, and the existing JSON files as shape examples |
+| `hytale.reference.source` | The Hytale server **source tree** — a Maven multi-module project with ~8,100 `.java` files: read the real API instead of decompiling or `javap`-ing the jar |
+
+Where to look inside the source tree:
+
+- `CoreServer/src/main/java/com/hypixel/hytale/server/core/` — the API this plugin compiles
+  against: `plugin/` (entry point, lifecycle, registry), `command/system/` (commands,
+  `CommandBase`), `Message.java`.
+- `builtin/` — the game's own plugins as full working examples; `builtin/HOWTO.md` explains how
+  they are wired.
+- `Examples/Plugins/ExamplePlugin/` — the official minimal plugin (one class plus its
+  `src/main/resources/manifest.json`).
+- Ignore `target/`, `dist/`, `run/`, `universe/`, `logs/` and `mods/` — build output and a server
+  run directory, not sources.
+
+That tree may not be the same version as the installed jar this project compiles against, so use it
+to find where something lives and how it is used, and trust the compiler (or `javap` on the jar) for
+whether a symbol exists at the configured `hytale.patchline`.
+
+The asset tree uses the `Common/` + `Server/` layout that `syncAssets` mirrors into
+`src/main/resources`, so anything copied from it lands at the same path in the jar.
 
 ## Local Hytale dependency
 
